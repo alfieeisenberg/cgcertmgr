@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		EC7B8C052C3EEFBB00A1F75D /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC7B8C042C3EEFBB00A1F75D /* main.swift */; };
+		ECCC31712C3F458A00DC22BB /* OpenSSL.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = ECCC31702C3F458A00DC22BB /* OpenSSL.xcframework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -25,6 +26,7 @@
 /* Begin PBXFileReference section */
 		EC7B8BFA2C3EEF4800A1F75D /* cgcertmgr */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = cgcertmgr; sourceTree = BUILT_PRODUCTS_DIR; };
 		EC7B8C042C3EEFBB00A1F75D /* main.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		ECCC31702C3F458A00DC22BB /* OpenSSL.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = OpenSSL.xcframework; path = OpenSSL/Frameworks/OpenSSL.xcframework; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -32,6 +34,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ECCC31712C3F458A00DC22BB /* OpenSSL.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -43,6 +46,7 @@
 			children = (
 				EC7B8BFC2C3EEF4800A1F75D /* cgcertmgr */,
 				EC7B8BFB2C3EEF4800A1F75D /* Products */,
+				ECCC316F2C3F458A00DC22BB /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -60,6 +64,14 @@
 				EC7B8C042C3EEFBB00A1F75D /* main.swift */,
 			);
 			path = cgcertmgr;
+			sourceTree = "<group>";
+		};
+		ECCC316F2C3F458A00DC22BB /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ECCC31702C3F458A00DC22BB /* OpenSSL.xcframework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -253,6 +265,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 3BHWWFU2JV;
 				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.invisinet.cgcertmgr;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -266,6 +279,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = 3BHWWFU2JV;
 				ENABLE_HARDENED_RUNTIME = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.invisinet.cgcertmgr;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 			};

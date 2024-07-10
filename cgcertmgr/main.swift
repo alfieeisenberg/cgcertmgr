@@ -7,6 +7,7 @@
 
 import Foundation
 import Security
+import OpenSSL
 
 // Example usage
 let pemCertificate = """
@@ -68,6 +69,60 @@ S8PypMwjZDMS7p+uemTpfg==
 -----END PRIVATE KEY-----
 """
 
+enum MyError: Error {
+	case invalidPEM(String) // Example case with associated value
+	case pemConversion(String)
+}
+
+func getPrivateKeyDerFromPem(pemString: String) -> (Data?, Error?) {
+	guard !pemString.isEmpty else {
+		return (nil, MyError.invalidPEM("Null PEM") )
+	}
+	
+	// Initialize OpenSSL library
+	SSL_library_init()
+	SSL_load_error_strings()
+	OpenSSL_add_all_algorithms()
+	
+	// Convert PEM string to a BIO
+	guard let bio = BIO_new(BIO_s_mem()) else {
+		return (nil, MyError.pemConversion("Memory Allocation failed"))
+	}
+	// Free the BIO
+	defer { BIO_free(bio) }
+
+	guard let pemData = pemString.data(using: .utf8) else {
+		return (nil, MyError.pemConversion("Failed to convert PEM string to data"))
+	}
+	
+	let pemBytes = [UInt8](pemData)
+	if BIO_write(bio, pemBytes, Int32(pemBytes.count)) <= 0 {
+		return (nil, MyError.pemConversion("\(#function): Failure writing data (length: \(pemData.count))"))
+	}
+	
+	// Read private key from BIO
+	guard let privateKey = PEM_read_bio_PrivateKey(bio, nil, nil, nil) else {
+		return (nil, MyError.pemConversion("Could not read PrivateKey from pem"))
+	}
+	
+	// privateKey is an EVP_PKEY
+	
+	// Get the key data from EVP_PKEY
+	var keyData: UnsafeMutablePointer<UInt8>?
+	let keyLength = i2d_PrivateKey(privateKey, &keyData)
+	defer { free(keyData) } // Free the key data
+
+	// Check for errors
+	guard keyLength > 0 else {
+		return (nil, MyError.pemConversion("Invalid Key Length"))
+	}
+	
+	// Create a Data object from the key data
+	let data = Data(bytes: keyData!, count: Int(keyLength))
+	
+	return (data, nil)
+}
+
 
 func convertPEMToSecCertificate(_ pemContent: String) -> SecCertificate? {
 	guard let data = extractPEMSection(pemContent: pemContent, section: "CERTIFICATE") else { return nil }
@@ -75,7 +130,9 @@ func convertPEMToSecCertificate(_ pemContent: String) -> SecCertificate? {
 }
 
 func convertPEMToSecKey(_ pemContent: String) -> SecKey? {
-	guard let data = extractPEMSection(pemContent: pemContent, section: "PRIVATE KEY") else { return nil }
+//	guard let data = extractPEMSection(pemContent: pemContent, section: "PRIVATE KEY") else { return nil }
+	let (data, err) = getPrivateKeyDerFromPem(pemString: pemContent)
+	guard let data = data else { return nil }
 	return createPrivateKey(from: data)
 }
 
@@ -106,14 +163,25 @@ func extractPEMSection(pemContent: String, section: String) -> Data? {
 }
 
 func createPrivateKey(from data: Data) -> SecKey? {
-	let options: [NSString: Any] = [kSecAttrKeyType: kSecAttrKeyTypeRSA, kSecAttrKeyClass: kSecAttrKeyClassPrivate]
-	return SecKeyCreateWithData(data as CFData, options as CFDictionary, nil)
+	let optionsX: [NSString: Any] = [
+		kSecAttrKeyType: kSecAttrKeyTypeRSA,
+		kSecAttrKeyClass: kSecAttrKeyClassPrivate
+	]
+	// FROM IAC
+	let options: [NSString: Any] = [
+		kSecAttrKeyType: kSecAttrKeyTypeRSA,
+		kSecAttrKeyClass: kSecAttrKeyClassPrivate,
+		kSecAttrKeySizeInBits: 2048,
+	]
+
+	return SecKeyCreateWithData(data as CFData, optionsX as CFDictionary, nil)
 }
 
 func addCertificateToKeychain(certificate: SecCertificate, label: String) -> Bool {
 	let addQuery: [NSString: Any] = [
 		kSecClass: kSecClassCertificate,
 		kSecAttrLabel: label,
+		kSecAttrApplicationTag: label,
 		kSecValueRef: certificate
 	]
 
@@ -129,9 +197,17 @@ func addPrivateKeyToKeychain(privateKey: SecKey, label: String) -> Bool {
 		kSecClass: kSecClassKey,
 		kSecAttrKeyClass: kSecAttrKeyClassPrivate,
 		kSecAttrLabel: label,
+		kSecAttrApplicationTag: label,
 		kSecValueRef: privateKey
 	]
-
+	// from IAC
+	let keyAttributes: [String: Any] = [
+		kSecClass as String: kSecClassKey,
+		kSecValueRef as String: privateKey,
+		kSecAttrLabel as String: label,
+		kSecAttrApplicationTag as String: label.data(using: .utf8)!,
+		kSecReturnPersistentRef as String: true
+	]
 	let status = SecItemAdd(addQuery as CFDictionary, nil)
 	if status != errSecSuccess {
 		if status == errSecDuplicateItem {
@@ -146,6 +222,7 @@ func findCertificateInKeychain(label: String) -> SecCertificate? {
 	let query: [NSString: Any] = [
 		kSecClass: kSecClassCertificate,
 		kSecAttrLabel: label,
+		kSecAttrApplicationTag: label,
 		kSecReturnRef: kCFBooleanTrue!,
 		kSecMatchLimit: kSecMatchLimitOne
 	]
@@ -188,7 +265,8 @@ func findPrivateKeyInKeychain(label: String) -> SecKey? {
 func deleteCertificateFromKeychain(label: String) -> Bool {
 	let deleteQuery: [NSString: Any] = [
 		kSecClass: kSecClassCertificate,
-		kSecAttrLabel: label
+		kSecAttrLabel: label,
+		kSecAttrApplicationTag: label,
 	]
 
 	let status = SecItemDelete(deleteQuery as CFDictionary)
