@@ -123,26 +123,79 @@ func getPrivateKeyDerFromPem(pemString: String) -> (Data?, Error?) {
 	return (data, nil)
 }
 
+/// This function will get the SecCertificate and X509 object from a pem-encoded certificate.  If the x509 object is returned successfully,
+/// the caller will have to clean it up when done:
+/// X509_free(certificate)
+///
+/// - Parameters:
+///    - pemData: Data representation of pem-encoded cert string
+///
+/// - Returns: The SecCertificate and X509 if found, otherwise an error
+func getCertificateDerFromPem(pemData: Data) -> (cert: Data?, x509: OpaquePointer?, error: Error?) {
+	// Initialize OpenSSL library
+	SSL_library_init()
+	SSL_load_error_strings()
+	OpenSSL_add_all_algorithms()
+	
+	// Load the X.509 certificate
+	guard let bio = BIO_new(BIO_s_mem()) else {
+		return (nil, nil, MyError.pemConversion("Memory Allocation failed"))
+	}
+	defer { BIO_free(bio) }
+	
+	let pemBytes = [UInt8](pemData)
+	if BIO_write(bio, pemBytes, Int32(pemBytes.count)) <= 0 {
+		return (nil, nil, MyError.pemConversion("\(#function): Failure writing data (length: \(pemData.count))"))
+	}
+	
+	guard let certificate = PEM_read_bio_X509(bio, nil, nil, nil) else {
+		return (nil, nil, MyError.pemConversion("Could not read Certificate from pem"))
+	}
+	// Caller will have to clean up the x509:
+	//defer { X509_free(certificate) }
+	
+	// Convert X.509 certificate to DER format
+	var derCertificate: UnsafeMutablePointer<UInt8>?
+	let derLength = i2d_X509(certificate, &derCertificate)
+	
+	guard derLength > 0 else {
+		return (nil, nil, MyError.pemConversion("Invalid Key Length"))
+	}
+	let derData = Data(bytes: derCertificate!, count: Int(derLength))
+	
+	return (derData, certificate, nil)
+}
+
 
 func convertPEMToSecCertificate(_ pemContent: String) -> SecCertificate? {
-	guard let data = extractPEMSection(pemContent: pemContent, section: "CERTIFICATE") else { return nil }
+//	guard let data = extractPEMSection(pemContent: pemContent, section: "CERTIFICATE") else { return nil }
+	let (data, _, err) = getCertificateDerFromPem(pemData: Data(pemContent.utf8))
+	
+	guard let data = data else {
+		print(err.debugDescription)
+		return nil
+	}
 	return SecCertificateCreateWithData(nil, data as CFData)
 }
 
 func convertPEMToSecKey(_ pemContent: String) -> SecKey? {
 //	guard let data = extractPEMSection(pemContent: pemContent, section: "PRIVATE KEY") else { return nil }
 	let (data, err) = getPrivateKeyDerFromPem(pemString: pemContent)
-	guard let data = data else { return nil }
+	guard let data = data else {
+		print(err.debugDescription)
+		return nil
+	}
 	return createPrivateKey(from: data)
 }
 
+//TODO: AI bots recommended this, but it wouldn't let me create a key from the PEM, although it worked for a cert, so switched to openssl way.
 func extractPEMSection(pemContent: String, section: String) -> Data? {
 	let startMarker = "-----BEGIN \(section)-----"
 	let endMarker = "-----END \(section)-----"
 
 	guard let startRange = pemContent.range(of: startMarker),
 		  let endRange = pemContent.range(of: endMarker) else {
-		print("Markers not found")
+		print("\(#function): \(#line), Markers not found")
 		return nil
 	}
 
@@ -152,10 +205,10 @@ func extractPEMSection(pemContent: String, section: String) -> Data? {
 	base64Content = base64Content.replacingOccurrences(of: "\n", with: "")
 	base64Content = base64Content.replacingOccurrences(of: "\r", with: "")
 
-	print("Extracted base64 content: \(base64Content)")
+	print("\(#function): \(#line), Extracted base64 content: \(base64Content)")
 
 	guard let data = Data(base64Encoded: base64Content) else {
-		print("Failed to decode base64")
+		print("\(#function): \(#line), Failed to decode base64")
 		return nil
 	}
 
@@ -163,18 +216,12 @@ func extractPEMSection(pemContent: String, section: String) -> Data? {
 }
 
 func createPrivateKey(from data: Data) -> SecKey? {
-	let optionsX: [NSString: Any] = [
+	let options: [NSString: Any] = [
 		kSecAttrKeyType: kSecAttrKeyTypeRSA,
 		kSecAttrKeyClass: kSecAttrKeyClassPrivate
 	]
-	// FROM IAC
-	let options: [NSString: Any] = [
-		kSecAttrKeyType: kSecAttrKeyTypeRSA,
-		kSecAttrKeyClass: kSecAttrKeyClassPrivate,
-		kSecAttrKeySizeInBits: 2048,
-	]
 
-	return SecKeyCreateWithData(data as CFData, optionsX as CFDictionary, nil)
+	return SecKeyCreateWithData(data as CFData, options as CFDictionary, nil)
 }
 
 func addCertificateToKeychain(certificate: SecCertificate, label: String) -> Bool {
@@ -187,7 +234,7 @@ func addCertificateToKeychain(certificate: SecCertificate, label: String) -> Boo
 
 	let status = SecItemAdd(addQuery as CFDictionary, nil)
 	if status != errSecSuccess {
-		print(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")
+		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
@@ -200,20 +247,13 @@ func addPrivateKeyToKeychain(privateKey: SecKey, label: String) -> Bool {
 		kSecAttrApplicationTag: label,
 		kSecValueRef: privateKey
 	]
-	// from IAC
-	let keyAttributes: [String: Any] = [
-		kSecClass as String: kSecClassKey,
-		kSecValueRef as String: privateKey,
-		kSecAttrLabel as String: label,
-		kSecAttrApplicationTag as String: label.data(using: .utf8)!,
-		kSecReturnPersistentRef as String: true
-	]
+
 	let status = SecItemAdd(addQuery as CFDictionary, nil)
 	if status != errSecSuccess {
 		if status == errSecDuplicateItem {
-			print("Key already exists: errSecDuplicateItem")
+			print("\(#function): \(#line), Key already exists: errSecDuplicateItem")
 		}
-		print(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")
+		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
@@ -229,12 +269,12 @@ func findCertificateInKeychain(label: String) -> SecCertificate? {
 
 	var item: CFTypeRef?
 	let status = SecItemCopyMatching(query as CFDictionary, &item)
-	print("findCertificateInKeychain status: \(status)")
+	print("\(#function): \(#line), status: \(status)")
 	if status != errSecSuccess {
-		print(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")
+		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	guard status == errSecSuccess, let certificate = item else {
-		print("Certificate not found")
+		print("\(#function): \(#line), Certificate not found")
 		return nil
 	}
 	return (certificate as! SecCertificate)
@@ -251,12 +291,12 @@ func findPrivateKeyInKeychain(label: String) -> SecKey? {
 
 	var item: CFTypeRef?
 	let status = SecItemCopyMatching(query as CFDictionary, &item)
-	print("findPrivateKeyInKeychain status: \(status)")
+	print("\(#function): \(#line), findPrivateKeyInKeychain status: \(status)")
 	if status != errSecSuccess {
-		print(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")
+		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	guard status == errSecSuccess, let privateKey = item else {
-		print("Private key not found")
+		print("\(#function): \(#line), Private key not found")
 		return nil
 	}
 	return (privateKey as! SecKey)
@@ -271,7 +311,7 @@ func deleteCertificateFromKeychain(label: String) -> Bool {
 
 	let status = SecItemDelete(deleteQuery as CFDictionary)
 	if status != errSecSuccess {
-		print(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")
+		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
@@ -285,33 +325,35 @@ func deletePrivateKeyFromKeychain(label: String) -> Bool {
 
 	let status = SecItemDelete(deleteQuery as CFDictionary)
 	if status != errSecSuccess {
-		print(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")
+		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
 
 func tryCerts(pemCertificate: String) {
+	print("===Trying Certs===")
 	if let certificate = convertPEMToSecCertificate(pemCertificate)  {
 		let certificateAdded = addCertificateToKeychain(certificate: certificate, label: "com.example.mycert")
 		if certificateAdded {
-			print("Certificate added: \(certificateAdded)")
+			print("\(#function): \(#line), Certificate added: \(certificateAdded)")
 			let foundCertificate = findCertificateInKeychain(label: "com.example.mycert")
-			print("Certificate found: \(String(describing: foundCertificate))")
+			print("\(#function): \(#line), Certificate found: \(String(describing: foundCertificate))")
 			let certificateDeleted = deleteCertificateFromKeychain(label: "com.example.mycert")
-			print("Certificate deleted: \(certificateDeleted)")
+			print("\(#function): \(#line), Certificate deleted: \(certificateDeleted)")
 		}
 	}
 }
 
 func tryKeys(pemKey: String) {
+	print("===Trying Keys===")
 	if let privateKey = convertPEMToSecKey(pemKey) {
 		let keyAdded = addPrivateKeyToKeychain(privateKey: privateKey, label: "com.example.mykey")
 		if keyAdded {
-			print("Key added: \(keyAdded)")
+			print("\(#function): \(#line), Key added: \(keyAdded)")
 			if let foundPrivateKey = findPrivateKeyInKeychain(label: "com.example.mykey") {
-				print("Private key found: \(foundPrivateKey)")
+				print("\(#function): \(#line), Private key found: \(foundPrivateKey)")
 				let keyDeleted = deletePrivateKeyFromKeychain(label: "com.example.mykey")
-				print("Private key deleted: \(keyDeleted)")
+				print("\(#function): \(#line), Private key deleted: \(keyDeleted)")
 			}
 		}
 	}
