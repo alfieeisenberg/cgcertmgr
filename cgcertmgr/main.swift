@@ -234,7 +234,7 @@ func addCertificateToKeychain(certificate: SecCertificate, label: String) -> Boo
 
 	let status = SecItemAdd(addQuery as CFDictionary, nil)
 	if status != errSecSuccess {
-		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
+		print("\(#function): \(#line), status: \(status) \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
@@ -253,7 +253,7 @@ func addPrivateKeyToKeychain(privateKey: SecKey, label: String) -> Bool {
 		if status == errSecDuplicateItem {
 			print("\(#function): \(#line), Key already exists: errSecDuplicateItem")
 		}
-		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
+		print("\(#function): \(#line), status: \(status) \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
@@ -271,7 +271,7 @@ func findCertificateInKeychain(label: String) -> SecCertificate? {
 	let status = SecItemCopyMatching(query as CFDictionary, &item)
 	print("\(#function): \(#line), status: \(status)")
 	if status != errSecSuccess {
-		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
+		print("\(#function): \(#line), status: \(status) \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	guard status == errSecSuccess, let certificate = item else {
 		print("\(#function): \(#line), Certificate not found")
@@ -293,7 +293,7 @@ func findPrivateKeyInKeychain(label: String) -> SecKey? {
 	let status = SecItemCopyMatching(query as CFDictionary, &item)
 	print("\(#function): \(#line), findPrivateKeyInKeychain status: \(status)")
 	if status != errSecSuccess {
-		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
+		print("\(#function): \(#line), status: \(status) \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	guard status == errSecSuccess, let privateKey = item else {
 		print("\(#function): \(#line), Private key not found")
@@ -311,7 +311,7 @@ func deleteCertificateFromKeychain(label: String) -> Bool {
 
 	let status = SecItemDelete(deleteQuery as CFDictionary)
 	if status != errSecSuccess {
-		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
+		print("\(#function): \(#line), status: \(status) \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
@@ -325,7 +325,7 @@ func deletePrivateKeyFromKeychain(label: String) -> Bool {
 
 	let status = SecItemDelete(deleteQuery as CFDictionary)
 	if status != errSecSuccess {
-		print("\(#function): \(#line), \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
+		print("\(#function): \(#line), status: \(status) \(SecCopyErrorMessageString(status, nil) as String? ?? "Unknown error")")
 	}
 	return status == errSecSuccess
 }
